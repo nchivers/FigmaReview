@@ -1,0 +1,9 @@
+{
+  "componentUrl": "https://www.figma.com/design/pypC8nTqembCVoO66eSHRn/branch/2qvJPV2B0c8o8TJqFAdVqv/%F0%9F%8E%A8--R--DS-Core-Library?m=auto&node-id=3672-620&t=jAIQPSpspRs7tgrA-1",
+  "componentName": "link",
+  "componentTokensCsv": "inputs/component-tokens.csv",
+  "componentExportJson": "inputs/component-export.json",
+  "figmaVariablesJson": "inputs/figma-variables.json",
+  "namingRules": "knowledge/naming-rules.md",
+  "additionalRules": "knowledge/additional-rules.md"
+}

@@ -24,23 +24,27 @@ IF name startsWith "color/divider/"
 
 ## COMPONENT COLOR (PUBLIC API TOKENS)
 
-IF name matches "^color/{component}/" AND name contains "/text/"  
+IF name matches "^color/{component}/" AND name contains "/text"  
   → scopes must equal ["TEXT_FILL"]  
   → hiddenFromPublishing must equal true  
 
-IF name matches "^color/{component}/" AND name contains "/icon/"  
+IF name matches "^color/{component}/" AND name contains "/icon"  
   → scopes must include ["SHAPE_FILL"]  
   → hiddenFromPublishing must equal true  
 
-IF name matches "^color/{component}/" AND name contains "/bg/"  
+IF name matches "^color/{component}/" AND name contains "/bg"  
   → scopes must equal ["FRAME_FILL","SHAPE_FILL"]  
   → hiddenFromPublishing must equal true  
 
-IF name matches "^color/{component}/" AND name contains "/border/"  
+IF name matches "^color/{component}/" AND name contains "/fill"  
+  → scopes must equal ["FRAME_FILL","SHAPE_FILL"]  
+  → hiddenFromPublishing must equal true 
+
+IF name matches "^color/{component}/" AND name contains "/border"  
   → scopes must equal ["STROKE_COLOR"]  
   → hiddenFromPublishing must equal true  
 
-IF name matches "^color/{component}/" AND name contains "/outline/"  
+IF name matches "^color/{component}/" AND name contains "/outline"  
   → scopes must equal ["STROKE_COLOR"]  
   → hiddenFromPublishing must equal true 
 
@@ -69,7 +73,7 @@ IF name contains component name AND represents dimension
   → scopes must equal ["WIDTH_HEIGHT"]  
   → hiddenFromPublishing must equal true  
 
-IF name matches "^size/{component}/" AND name contains "/border/"  
+IF name matches "^size/{component}/" AND name contains "/border"  
   → scopes must equal ["STROKE_FLOAT"]  
   → hiddenFromPublishing must equal true 
 

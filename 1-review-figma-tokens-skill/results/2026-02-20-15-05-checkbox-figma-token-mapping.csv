@@ -95,6 +95,9 @@ affirm.size.checkbox.indicator.border.width.unselected.pressed,size/checkbox/ind
 affirm.size.checkbox.indicator.border.width.unselected.resting,size/checkbox/indicator/border/width/unselected/resting,VariableID:6124:3449
 affirm.size.checkbox.indicator.icon.all,size/checkbox/indicator/icon/all,VariableID:6124:4655
 affirm.size.checkbox.outline.width.focus_visible,size/checkbox/outline/width/focus_visible,VariableID:5937:8822
+affirm.size.checkbox.outline.width.hover,,
+affirm.size.checkbox.outline.width.pressed,,
+affirm.size.checkbox.outline.width.resting,,
 affirm.spacing.checkbox.container.outline.offset.focus_visible,spacing/checkbox/container/outline/offset/focus_visible,VariableID:19700:3927
 affirm.spacing.checkbox.gap_x,spacing/checkbox/gap_x,VariableID:5937:8817
 affirm.spacing.checkbox.indicator.margin_top,spacing/checkbox/indicator/margin_top,VariableID:15554:32161

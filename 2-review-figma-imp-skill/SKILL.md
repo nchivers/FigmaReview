@@ -42,18 +42,23 @@ Read paths from **inputs/inputs.json** (paths are relative to the skill root):
    - **get_design_context(fileKey, nodeId)** — Optional. Use if you need more granular node-level detail (e.g. which node has which fill or spacing) to report specific nodes for raw-value or typography issues.
    - **get_metadata(fileKey, nodeId)** — Optional. Sparse XML of layer IDs, names, types, positions, sizes; use if you need to map issues to specific layer names/IDs.
 
-3. **If Figma MCP is not available:** Use **componentExportJson** as described in [reference.md](reference.md). The user must supply an exported component tree (plugin or Figma API) with variable bindings. Ask the user to export to the path in `inputs.json` or to configure the Figma MCP for a simpler workflow.
+3. **Owned subcomponents (when additional rules apply):** If **additionalRules** defines owned subcomponents (e.g. local and not published), **you must get the full context for each owned subcomponent’s component set** and include it in the review. Use **[reference.md](reference.md)#resolving-owned-subcomponent-node-ids-for-mcp** to resolve each subcomponent’s **(fileKey, nodeId)** correctly:
+   - Call **get_metadata(fileKey, rootNodeId)** (and optionally get_design_context) for the **root** so the response includes the full tree. Parse it for **INSTANCE** nodes and any property that references the main component (e.g. `mainComponent`, `componentId`, or a top-level `components`/`componentSets` map with `node_id` and `file_key`). If you only have **variant** node IDs (sibling COMPONENT nodes), the **component set node ID is their parent**’s id—use that.
+   - **Node ID format:** Use the format the MCP expects (often colon, e.g. `3672:742`; try hyphen `3672-742` if needed).
+   - For each owned subcomponent, once you have the **component set** (fileKey, nodeId), call **get_variable_defs(fileKey, nodeId)**, **get_design_context(fileKey, nodeId)**, and **get_metadata(fileKey, nodeId)**. Merge the returned data into the review scope and run all review criteria on the root **and** each owned subcomponent. In the results, label issues by component (e.g. "Root component: …" or "Subcomponent [name]: …").
+
+4. **If Figma MCP is not available:** Use **componentExportJson** as described in [reference.md](reference.md). The user must supply an exported component tree (plugin or Figma API) with variable bindings. Ask the user to export to the path in `inputs.json` or to configure the Figma MCP for a simpler workflow.
 
 ---
 
 ## Review Criteria
 
-Perform these checks and report every finding. If an input file is missing, note it and skip the checks that depend on it.
+Perform these checks and report every finding. If an input file is missing, note it and skip the checks that depend on it. **When additional rules define owned subcomponents,** "component data" means the root component’s context **plus** the full context (variables, design context, metadata) fetched for each owned subcomponent’s component set; run each check against the root and each owned subcomponent, and label findings by component.
 
 ### 1. Token coverage (all associated tokens applied)
 
-- **When:** `componentTokensCsv` is provided and component data is available (from Figma MCP **get_variable_defs** or from `componentExportJson`).
-- **Check:** Every token listed in the CSV should appear as a variable used in the component. Match by variable ID or by token name → variable name (Figma variable names often use slashes, e.g. `color/button/bg/resting`).
+- **When:** `componentTokensCsv` is provided and component data is available (from Figma MCP **get_variable_defs** or from `componentExportJson`). When owned subcomponents are in scope, use the combined context (root + each owned subcomponent).
+- **Check:** Every token listed in the CSV should appear as a variable used in the component (and in owned subcomponents, when applicable). Match by variable ID or by token name → variable name (Figma variable names often use slashes, e.g. `color/button/bg/resting`).
 - **Additional rules:** If **additionalRules** is loaded, apply any exceptions (e.g. position tokens: do not report them as unused, because Figma cannot bind variables to x/y).
 - **Report:** List each token from the CSV that does **not** appear in the component’s used variables and is **not** excluded by additional rules. Highlight these as **issues** (tokens not used). If any tokens were excluded per additional rules, note that in the results.
 
@@ -81,25 +86,25 @@ Perform these checks and report every finding. If an input file is missing, note
 
 Write exactly one results file:
 
-- **Path:** `results/figma-imp-review-{componentName}-YYYY-MM-DD.md`. Use `componentName` from inputs.json if present; sanitize for filenames (lowercase, replace spaces and invalid chars with hyphens, e.g. "Merchant Tile" → `merchant-tile`). If `componentName` is missing, use `component`. Use today’s date in ISO format for YYYY-MM-DD.
+- **Path:** `results/YYYY-MM-DD-HH-MM-{componentName}-figma-imp-review.md`. Use `componentName` from inputs.json if present; sanitize for filenames (lowercase, replace spaces and invalid chars with hyphens, e.g. "Merchant Tile" → `merchant-tile`). If `componentName` is missing, use `component`. Use today’s date in ISO format for YYYY-MM-DD-HH-MM.
 - **Contents:**
-  1. **Inputs used** – componentName (if set); componentUrl; whether component data came from Figma MCP or from componentExportJson; which of CSV, variables JSON, naming rules, and additional rules were present.
+  1. **Inputs used** – componentName (if set); componentUrl; whether component data came from Figma MCP or from componentExportJson; which of CSV, variables JSON, naming rules, and additional rules were present. If owned subcomponents were in scope, list them and confirm their context was fetched and included.
   2. **1. Token coverage** – Tokens not used (from CSV) or note that CSV/export was missing.
   3. **2. Raw values and direct base tokens** – List of node/property where a raw value was used or a variable whose name starts with `base/` was used.
   4. **3. Typography** – Text nodes not using library typography styles.
   5. **4. Component property naming** – Violations of naming-rules (variant, boolean, content swap, text property names and values; or note that rules file was missing).
   6. **Summary** – Count of issues per category and any critical vs non-critical note if the rules define them.
 
-Use clear headings and bullet lists. If a section has no findings, write "None" or "No issues." Do not modify input files; only write the results file.
+Use clear headings and bullet lists. When the review includes owned subcomponents, label each finding by component (e.g. "Root component:", "Subcomponent [name]:") so readers can see where each issue lives. If a section has no findings, write "None" or "No issues." Do not modify input files; only write the results file.
 
 ---
 
 ## Workflow
 
 1. Read **inputs/inputs.json** and resolve paths relative to the skill root. Require **componentUrl**. If **additionalRules** is specified, load that file and apply its rules throughout the review.
-2. **Get component data:** If the Figma MCP server is available, parse **componentUrl** for fileKey and nodeId, then call **get_variable_defs** (and optionally **get_design_context** or **get_metadata**) and use the response as component data. Otherwise, load **componentExportJson** if provided; if neither MCP nor export is available, inform the user that they should either configure the Figma MCP or supply a component export at `componentExportJson`.
+2. **Get component data:** If the Figma MCP server is available, parse **componentUrl** for fileKey and nodeId, then call **get_variable_defs** (and optionally **get_design_context** or **get_metadata**) and use the response as component data. If **additionalRules** defines owned subcomponents, identify each owned subcomponent and **get the full context** (get_variable_defs, get_design_context, get_metadata) for each one’s component set and include it in the data used for the review. Otherwise, load **componentExportJson** if provided; if neither MCP nor export is available, inform the user that they should either configure the Figma MCP or supply a component export at `componentExportJson`.
 3. Load other optional inputs (CSV, variables JSON, naming rules).
 4. Run each applicable check (1–4) using the component data and collect issues.
-5. Write **results/figma-imp-review-{componentName}-YYYY-MM-DD.md** with all findings (componentName from inputs, sanitized; date = today).
+5. Write **results/YYYY-MM-DD-HH-MM-{componentName}-figma-imp-review.md** with all findings (componentName from inputs, sanitized; date = today).
 
 **Note:** With Figma MCP configured, the user only needs to set **componentUrl** in inputs.json (and optionally the CSV and naming rules). No manual component export is required.

@@ -5,19 +5,20 @@ description: Reviews a CSV of component-specific tokens against naming rules, as
 
 # CSV Component Token Review
 
-Review a CSV of component tokens against naming rules, assignment completeness, and logical coverage. Write findings to a single markdown file in `results/`.
+Review a CSV of component tokens against naming rules, assignment completeness, and logical coverage. Read inputs from the workspace **inputs** folder and write the results file to **outputs/0-review**.
 
 ---
 
 ## Inputs
 
-Paths are relative to the skill root (`0-review-csv-tokens-skill/`).
+- **Input files** are read from the workspace **inputs** folder (paths relative to the **workspace/project root**).
+- **Naming rules** are read from the skill’s knowledge folder.
 
 | Source | Purpose |
 |--------|--------|
 | **inputs/inputs.json** | **Required.** Must include `componentName` (e.g. `link`, `button`). Used in the results filename. |
 | **inputs/component-tokens.csv** | **Required.** CSV with one row per token. **One column per name segment** (no dot-separated full token). Segment columns plus assignment columns. |
-| **knowledge/token-naming-rules.md** | **Required for naming check.** Defines each segment’s purpose, allowed values/patterns, and token-building examples. |
+| **0-review-csv-tokens-skill/knowledge/token-naming-rules.md** | **Required for naming check.** Defines each segment’s purpose, allowed values/patterns, and token-building examples. Path is relative to workspace root. |
 
 ### CSV structure
 
@@ -34,7 +35,7 @@ Run all three checks and report every finding. If an input is missing, note it a
 
 ### 1. Naming issues
 
-- **When:** `knowledge/token-naming-rules.md` exists and CSV has segment columns.
+- **When:** Token-naming-rules.md is loaded and CSV has segment columns.
 - **Check:** For each token row, compare each segment column value to the rules: purpose, allowed values/patterns, and token-building examples. Flag any segment that does not align (wrong value or violates an example).
 - **Report:** List each token (reconstruct from segment columns for reference) and the segment(s) with the rule that was broken and the expected pattern or value. Mark as **naming issue**.
 
@@ -49,16 +50,16 @@ Run all three checks and report every finding. If an input is missing, note it a
 ### 3. Logically missing tokens
 
 - **When:** CSV has enough tokens to infer patterns (e.g. same element with different states).
-- **Check:** Infer state/variant patterns from existing tokens (e.g. `resting`, `hover`, `pressed`, `disabled`, `focus_visible`). For each (category, component, element) combination that has at least two states, consider the full set of expected states from the naming rules or from common patterns. If some states are present but others are missing (e.g. text has resting and hover but no pressed, disabled, or focus_visible), flag the missing ones as **potentially missing** for consideration.
+- **Check:** Infer state/variant patterns from existing tokens (e.g. `resting`, `hover`, `pressed`, `disabled`, `focus_visible`). For each (Foundation, component, element) combination that has at least two states, consider the full set of expected states from the naming rules or from common patterns. If some states are present but others are missing, flag the missing ones as **potentially missing** for consideration. **Exception:** Apply the "Handling error tokens" rule from token-naming-rules.md: do not suggest or flag missing `disabled` tokens for error states (e.g. `error`, `error_selected`, `error_unselected`, `error_empty`, `error_filled`), since a component is typically not both in error and disabled.
 - **Report:** List suggested token names or (category, component, element, state) that appear logically missing, with a short reason (e.g. “text has resting, hover; consider adding pressed, disabled, focus_visible”). Mark as **for consideration** (not a hard failure).
 
 ---
 
 ## Output
 
-Write exactly one results file:
+Write exactly one results file to the workspace **outputs/0-review** folder (path relative to the **workspace/project root**):
 
-- **Path:** `results/csv-token-review-{component_name}-YYYY-MM-DD.md`
+- **Path:** `outputs/0-review/YYYY-MM-DD-HH-MM-{component_name}-csv-token-review.md`
   - Use `componentName` from **inputs/inputs.json**. Sanitize for filenames: lowercase, replace spaces and invalid characters with hyphens (e.g. `Merchant Tile` → `merchant-tile`). If `componentName` is missing or empty, use `component`.
   - Use today’s date in ISO format for `YYYY-MM-DD`.
 - **Contents:**
@@ -74,12 +75,12 @@ Use clear headings and bullet or table lists. If a section has no findings, writ
 
 ## Workflow
 
-1. Read **inputs/inputs.json** and get `componentName`. Resolve all paths relative to the skill root.
-2. Read **inputs/component-tokens.csv**. Identify segment columns (by header name or position per token-naming-rules.md) and assignment columns (All Modes, Light Mode, Dark Mode) by header name.
-3. Read **knowledge/token-naming-rules.md** to load segment definitions, allowed values, and token-building examples.
+1. Read **inputs/inputs.json** (workspace root) and get `componentName`.
+2. Read **inputs/component-tokens.csv** (workspace root). Identify segment columns (by header name or position per token-naming-rules.md) and assignment columns (All Modes, Light Mode, Dark Mode) by header name.
+3. Read **0-review-csv-tokens-skill/knowledge/token-naming-rules.md** to load segment definitions, allowed values, and token-building examples.
 4. Run **Check 1 (naming):** For each row, read segment values from the segment columns. Validate each segment against the rules; record violations. Reconstruct token name from segments (e.g. for reporting) by joining non-empty segments with `.`.
 5. Run **Check 2 (assignments):** For each row, read Foundation from the foundation segment column. Apply single-mode vs dual-mode rule; record tokens missing required assignments.
 6. Run **Check 3 (logically missing):** Group tokens by (Foundation, Component, Part/Property as appropriate). For each group with multiple Interaction (or State) values, compare to full set of expected states; list suggested missing tokens for consideration.
-7. Write **results/csv-token-review-{component_name}-YYYY-MM-DD.md** with inputs used, the three sections above, and the summary.
+7. Write **outputs/0-review/YYYY-MM-DD-HH-MM-{component_name}-csv-token-review.md** (workspace root) with inputs used, the three sections above, and the summary.
 
-Ensure the **results** directory exists before writing (create it if necessary).
+Ensure the **outputs/0-review** directory exists before writing (create it if necessary).

@@ -119,6 +119,10 @@ Bracketed segments are optional and may be omitted when not applicable.
 - **Allowed:** `resting`, `hover`, `focus`, `focus_visible`, `pressed`, `disabled`, `loading`, `stretched`
 - **Example:** `affirm.color.link.text.resting`, `affirm.color.link.text.focus_visible`
 
+### Handling error tokens
+
+Error states (`error`, `error_selected`, `error_unselected`, `error_empty`, `error_filled`, and other error-prefixed composite states) **do not require** corresponding tokens with interaction `disabled`. A component is typically not in an error state and disabled at the same time, so omit disabled tokens for error-state tokens. The CSV review should not flag “logically missing” tokens for error states that lack a `disabled` interaction variant.
+
 ---
 
 ## Token-building patterns (required)

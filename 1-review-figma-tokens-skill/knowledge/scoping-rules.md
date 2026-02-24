@@ -18,6 +18,10 @@ IF name startsWith "color/bg/" OR name startsWith "color/fill/"
 
 IF name startsWith "color/divider/"  
   → scopes must equal ["STROKE_COLOR"]
+  → hiddenFromPublishing must equal false 
+
+IF name startsWith "color/border/"  
+  → scopes must equal ["STROKE_COLOR"]
   → hiddenFromPublishing must equal false  
 
 ---

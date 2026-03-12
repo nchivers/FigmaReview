@@ -58,7 +58,7 @@ Bracketed segments are optional and may be omitted when not applicable.
 ### Size-Variant
 
 - **Purpose:** Size when the component’s appearance or behavior differs by size.
-- **Allowed:** `xsmall`, `small`, `medium`, `large`, `xlarge`
+- **Allowed:** `xxsmall`, `xsmall`, `small`, `medium`, `large`, `xlarge`, `xxlarge`
 - **Example:** `affirm.size.link.large.icon.all`, `affirm.size.link.medium.icon.all`
 
 ### Context

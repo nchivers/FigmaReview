@@ -1,4 +1,10 @@
 {
   "componentName": "putComponentNameHerePlease",
-  "componentUrl": "https://www.figma.com/design/blahblahblah"
+  "componentUrl": "https://www.figma.com/design/blahblahblah",
+  "subcomponents": [
+    { 
+      "name": "UserSuppliedName", 
+      "subcomponentUrl": "https://www.figma.com/design/FILE_KEY/...?node-id=NODE_ID" 
+    }
+  ]
 }

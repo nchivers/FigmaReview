@@ -6,6 +6,8 @@ Else if $REVIEW == 1.1 || $REVIEW == "token prep" then run tools/1-token-prep/SK
 
 Else if $REVIEW == 1 || $REVIEW == "figma variables review" then run tools/1-figma-variables-review/SKILL.md
 
+Else if $REVIEW == 2.1 || $REVIEW == "build figma variables" then run tools/2-build-figma-variables/SKILL.md
+
 Else if $REVIEW == 2 || $REVIEW == "figma component review" then run tools/2-figma-component-review/SKILL.md
 
 Else if $REVIEW == 3 || $REVIEW == "code qa" then run tools/3-code-qa/SKILL.md

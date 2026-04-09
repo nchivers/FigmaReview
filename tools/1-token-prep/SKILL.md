@@ -146,7 +146,10 @@ For each, plan a **DELETE** and list the variable name and id.
 
 CSV tokens that were **not** matched in Task 1 or Task 2 do not yet exist in Figma and need to be created.
 
-For each, plan an **ADD** and include the token name and the values from the CSV (`All Modes`, `Light Mode`, `Dark Mode`).
+For each, plan an **ADD** and include:
+- The token name and the values from the CSV (`All Modes`, `Light Mode`, `Dark Mode`). For each non-empty value, resolve the corresponding variable ID using the base token value lookup rules above (normalize the value, match against `tools/knowledge/figma-base-variables.csv`, use the `id` column). If no match is found, note "no alias found" and include the raw value.
+- **Scopes**: Determine the correct Figma variable scopes by matching the normalized token name against the rules in `tools/knowledge/figma-variable-scoping-rules.md`. Apply the first matching rule. List all required scope values (e.g. `["TEXT_FILL"]`, `["FRAME_FILL","SHAPE_FILL"]`).
+- **Hidden from publishing**: Determine the correct `hiddenFromPublishing` value (`true` or `false`) from the same matching rule in `tools/knowledge/figma-variable-scoping-rules.md`.
 
 ---
 
@@ -217,9 +220,9 @@ Use the structure below. If a section has no items, write "None." so reviewers c
 
 ## Task 4 — Additions
 
-| CSV token name | All Modes | All Modes ID | Light Mode | Light Mode ID | Dark Mode | Dark Mode ID | Action |
-|----------------|-----------|--------------|------------|---------------|-----------|--------------|--------|
-| ...            | ...       | ...          | ...        | ...           | ...       | ...          | ADD    |
+| CSV token name | All Modes | All Modes ID | Light Mode | Light Mode ID | Dark Mode | Dark Mode ID | Scopes | Hidden from publishing | Action |
+|----------------|-----------|--------------|------------|---------------|-----------|--------------|--------|------------------------|--------|
+| ...            | ...       | ...          | ...        | ...           | ...       | ...          | ...    | true / false           | ADD    |
 
 ---
 

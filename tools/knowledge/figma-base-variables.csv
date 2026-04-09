@@ -46,6 +46,7 @@ base/color/duskfall/800,#2E086A,VariableID:4359:1125513
 base/color/duskfall/900,#1D0048,VariableID:4359:1125514
 base/color/gray/020,#F8F8FA,VariableID:4360:1126009
 base/color/gray/050,#EDEEF2,VariableID:4360:1125972
+base/color/gray/050 • a00,#EDEEF200,VariableID:4725:5
 base/color/gray/100,#DDDEE2,VariableID:4360:1125973
 base/color/gray/150,#CCCDD4,VariableID:4360:1125974
 base/color/gray/200,#BBBDC6,VariableID:4360:1125975

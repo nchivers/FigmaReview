@@ -8,6 +8,7 @@
       "Bash(bash:*)",
       "Bash(sh:*)",
       "Bash(chmod:*)",
+      "Bash(mkdir:*)",
       "Read(**)",
       "Write(**)",
       "Edit(**)",

@@ -31,7 +31,8 @@
       "Bash(ruby --version)",
       "Bash(java --version)",
       "Bash(turbo *)",
-      "Bash(env)"
+      "Bash(env)",
+      "Read(../**)"
     ]
   }
 }

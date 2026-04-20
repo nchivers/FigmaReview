@@ -1,560 +1,478 @@
 #!/usr/bin/env python3
 """
-Figma Token Review Script
-Compares component tokens CSV against Figma variables JSON and checks scoping rules.
+Figma Variables Review
+
+Reads:
+  - inputs/inputs.json              (componentName)
+  - inputs/component-tokens.csv     (source of truth)
+  - inputs/figma-variables.json     (Figma state)
+  - tools/knowledge/figma-variable-scoping-rules.md (human-readable; rules encoded below)
+  - tools/3-figma-variables-review/knowledge/additional-rules.md (shadow/gradient
+    exclusion + component-segment scoping)
+
+Writes:
+  - outputs/1-review/YYYY-MM-DD-HH-MM-{component}-figma-token-review.md
+  - outputs/1-review/YYYY-MM-DD-HH-MM-{component}-figma-token-mapping.csv
+  - inputs/mapped-component-tokens.csv   (fully overwritten every run, by design)
 """
 
 import csv
 import json
 import os
-from datetime import date
+import re
+from datetime import datetime
 
-# --- Configuration ---
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_PATH = os.path.join(BASE_DIR, "inputs", "component-tokens.csv")
-JSON_PATH = os.path.join(BASE_DIR, "inputs", "figma-variables.json")
-RESULTS_DIR = os.path.join(BASE_DIR, "results")
-TODAY = "2026-02-16"
-MD_OUTPUT = os.path.join(RESULTS_DIR, f"figma-review-{TODAY}.md")
-CSV_OUTPUT = os.path.join(RESULTS_DIR, f"figma-token-mapping-{TODAY}.csv")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", ".."))
+INPUTS_DIR = os.path.join(REPO_ROOT, "inputs")
+OUTPUTS_DIR = os.path.join(REPO_ROOT, "outputs", "1-review")
 
-COMPONENT_NAME = "merchant_tile"
+INPUTS_JSON = os.path.join(INPUTS_DIR, "inputs.json")
+CSV_PATH = os.path.join(INPUTS_DIR, "component-tokens.csv")
+JSON_PATH = os.path.join(INPUTS_DIR, "figma-variables.json")
+MAPPED_CSV_PATH = os.path.join(INPUTS_DIR, "mapped-component-tokens.csv")
 
-os.makedirs(RESULTS_DIR, exist_ok=True)
+STYLE_FOUNDATIONS = {"shadow", "gradient"}
 
 
-# --- Step 1: Read inputs ---
+def safe_segment(s):
+    s = (s or "").strip().lower()
+    s = re.sub(r"[\s/]+", "-", s)
+    s = re.sub(r"[^a-z0-9_\-]+", "", s)
+    return s or "component"
+
+
+def load_component_name():
+    with open(INPUTS_JSON) as f:
+        data = json.load(f)
+    return (data.get("componentName") or "").strip()
+
 
 def read_csv_tokens(path):
-    """Read the component tokens CSV and return a list of dicts."""
     tokens = []
-    with open(path, "r") as f:
+    with open(path) as f:
         reader = csv.DictReader(f)
         for row in reader:
+            full = (row.get("Full Token") or "").strip()
+            if not full:
+                continue
             tokens.append({
-                "full_token": row["Full Token"].strip(),
-                "all_modes": row["All Modes"].strip() if row["All Modes"] else "",
-                "light_mode": row["Light Mode"].strip() if row["Light Mode"] else "",
-                "dark_mode": row["Dark Mode"].strip() if row["Dark Mode"] else "",
+                "full_token": full,
+                "foundation": (row.get("foundation") or "").strip().lower(),
+                "component": (row.get("component") or "").strip().lower(),
+                "all_modes": (row.get("All Modes") or "").strip(),
+                "light_mode": (row.get("Light Mode") or "").strip(),
+                "dark_mode": (row.get("Dark Mode") or "").strip(),
             })
     return tokens
 
 
 def read_figma_variables(path):
-    """Read the Figma variables JSON and return the list."""
-    with open(path, "r") as f:
+    with open(path) as f:
         return json.load(f)
 
 
-# --- Step 2: Name mapping ---
-
-def csv_name_to_figma_name(csv_token):
-    """
-    Convert CSV token name to Figma-style name.
-    Strip 'affirm.' prefix, replace '.' with '/'.
-    e.g. affirm.color.merchant_tile.container.bg.focus_visible
-      -> color/merchant_tile/container/bg/focus_visible
-    """
-    name = csv_token
-    if name.startswith("affirm."):
-        name = name[len("affirm."):]
-    return name.replace(".", "/")
+def csv_token_to_figma_name(full_token):
+    t = full_token
+    if t.startswith("affirm."):
+        t = t[len("affirm."):]
+    return t.replace(".", "/")
 
 
-def normalize_name(name):
-    """Normalize a name for fuzzy comparison: lowercase, replace spaces with underscores."""
-    return name.lower().replace(" ", "_")
+def component_segment(figma_name):
+    parts = figma_name.split("/")
+    return parts[1] if len(parts) > 1 else ""
 
 
-# --- Step 3: Task 1 - CSV vs Figma comparison ---
-
-def extract_alias_short(alias_name):
-    """
-    Extract the short form from a Figma alias name.
-    e.g. 'base/g-color/indigo/050' -> 'indigo.050'
-         'base/g-color/opacity/000' -> 'opacity.000'
-         'base/size/025' -> 'size.025'
-    """
-    if not alias_name:
+def normalize_alias(name):
+    if not name:
         return ""
-    parts = alias_name.split("/")
-    # For color aliases like 'base/g-color/gray/950', take last 2 segments
-    # For size aliases like 'base/size/025', take last 2 segments
-    if len(parts) >= 2:
-        return f"{parts[-2]}.{parts[-1]}"
-    return alias_name
+    parts = name.split("/")
+    return f"{parts[-2]}.{parts[-1]}" if len(parts) >= 2 else name
 
 
-def get_figma_mode_values(figma_var):
-    """
-    Extract light and dark mode alias short names from a Figma variable.
-    Returns (light_value, dark_value) as short names.
-    """
-    light_val = ""
-    dark_val = ""
-    all_modes_val = ""
+def normalize_csv_value(val):
+    if not val:
+        return ""
+    parts = val.split(".")
+    return f"{parts[-2]}.{parts[-1]}" if len(parts) >= 2 else val
 
-    values_by_mode = figma_var.get("valuesByMode", {})
-    for mode_key, mode_data in values_by_mode.items():
-        mode_name = mode_data.get("modeName", "")
-        value = mode_data.get("value", {})
 
+def figma_mode_values(var):
+    light, dark, all_modes = "", "", ""
+    for _, mode_data in var.get("valuesByMode", {}).items():
+        mode_name = (mode_data.get("modeName") or "").lower()
+        value = mode_data.get("value")
         if isinstance(value, dict) and value.get("type") == "VARIABLE_ALIAS":
-            alias_name = value.get("name", "")
-            short = extract_alias_short(alias_name)
+            short = normalize_alias(value.get("name", ""))
+        elif value is None:
+            short = ""
         else:
-            short = str(value) if value else ""
-
-        if "Light" in mode_name:
-            light_val = short
-        elif "Dark" in mode_name:
-            dark_val = short
+            short = str(value)
+        if "light" in mode_name:
+            light = short
+        elif "dark" in mode_name:
+            dark = short
         else:
-            # Single-mode variable (e.g. spacing, size, radius, position)
-            all_modes_val = short
-
-    return all_modes_val, light_val, dark_val
+            all_modes = short
+    return all_modes, light, dark
 
 
-def compare_value(csv_val, figma_val):
+def evaluate_scoping(var):
     """
-    Compare a CSV value like 'indigo.050' against a Figma alias short form like 'indigo.050'.
-    Returns True if they match.
+    Returns list of (rule_desc, expected_scopes, mode, expected_hidden_or_None).
+    Encodes tools/knowledge/figma-variable-scoping-rules.md. `hidden=None` means
+    the rule file does not constrain hiddenFromPublishing.
     """
-    if not csv_val and not figma_val:
-        return True
-    if not csv_val or not figma_val:
-        return False
-    return csv_val.strip().lower() == figma_val.strip().lower()
+    name = var.get("name", "")
+    collection = var.get("collection", "")
+    rules = []
 
+    # --- COLOR ---
+    if re.match(r"^color/text/", name):
+        rules.append(("color/text/* → scopes must equal [TEXT_FILL], hidden=false",
+                      ["TEXT_FILL"], "equal", False))
+    elif re.match(r"^color/icon/", name):
+        rules.append(("color/icon/* → scopes must include SHAPE_FILL, hidden=false",
+                      ["SHAPE_FILL"], "include", False))
+    elif re.match(r"^color/bg/", name) or re.match(r"^color/fill/", name):
+        rules.append(("color/bg|fill/* → scopes must equal [FRAME_FILL, SHAPE_FILL], hidden=false",
+                      ["FRAME_FILL", "SHAPE_FILL"], "equal", False))
+    elif re.match(r"^color/border/", name):
+        rules.append(("color/border/* → scopes must equal [STROKE_COLOR], hidden=false",
+                      ["STROKE_COLOR"], "equal", False))
+    elif re.match(r"^color/divider/", name):
+        rules.append(("color/divider/* → scopes must equal [STROKE_COLOR], hidden=true",
+                      ["STROKE_COLOR"], "equal", True))
+    elif re.match(r"^color/[^/]+/", name):
+        # Component color (public API): color/{component}/…
+        if "/text/" in name or name.endswith("/text"):
+            rules.append(("color/{component}/…/text/… → [TEXT_FILL], hidden=true",
+                          ["TEXT_FILL"], "equal", True))
+        elif "/icon/" in name or name.endswith("/icon"):
+            rules.append(("color/{component}/…/icon/… → include SHAPE_FILL, hidden=true",
+                          ["SHAPE_FILL"], "include", True))
+        elif "/bg/" in name or name.endswith("/bg"):
+            rules.append(("color/{component}/…/bg/… → [FRAME_FILL, SHAPE_FILL], hidden=true",
+                          ["FRAME_FILL", "SHAPE_FILL"], "equal", True))
+        elif "/fill/" in name or name.endswith("/fill"):
+            rules.append(("color/{component}/…/fill/… → [FRAME_FILL, SHAPE_FILL], hidden=true",
+                          ["FRAME_FILL", "SHAPE_FILL"], "equal", True))
+        elif "/border/" in name or name.endswith("/border") or "/border" in name:
+            rules.append(("color/{component}/…/border… → [STROKE_COLOR], hidden=true",
+                          ["STROKE_COLOR"], "equal", True))
+        elif "/outline/" in name or name.endswith("/outline"):
+            rules.append(("color/{component}/…/outline/… → [STROKE_COLOR], hidden=true",
+                          ["STROKE_COLOR"], "equal", True))
 
-def task1_comparison(csv_tokens, figma_vars):
-    """
-    Perform Task 1: CSV vs Figma comparison.
-    Returns:
-      - missing_in_figma: list of CSV tokens not found in Figma
-      - extra_in_figma: list of Figma vars (merchant_tile) not in CSV
-      - naming_discrepancies: list of (csv_name, figma_name, issue)
-      - assignment_discrepancies: list of dicts with discrepancy details
-      - matched_pairs: list of (csv_token, figma_var) for matched tokens
-    """
-    # Build lookup: normalized figma name -> figma var
-    figma_by_norm_name = {}
-    figma_by_exact_name = {}
-    for var in figma_vars:
-        name = var.get("name", "")
-        figma_by_exact_name[name] = var
-        figma_by_norm_name[normalize_name(name)] = var
+    # --- SPACING ---
+    if (collection == "spacing"
+            or name.startswith("spacing/")
+            or "/padding" in name
+            or "/gap" in name
+            or "/margin" in name):
+        # Component-scoped spacing (spacing/{component}/…) → hidden=true
+        hidden = True if (name.startswith("spacing/") and len(name.split("/")) >= 3) else None
+        rules.append(("spacing → scopes must equal [GAP]"
+                      + ("; component-scoped → hidden=true" if hidden else ""),
+                      ["GAP"], "equal", hidden))
 
-    # Build set of all merchant_tile Figma variable names (normalized)
-    figma_mt_names_norm = set()
-    figma_mt_vars = []
-    for var in figma_vars:
-        name = var.get("name", "")
-        if COMPONENT_NAME in name:
-            figma_mt_names_norm.add(normalize_name(name))
-            figma_mt_vars.append(var)
-
-    missing_in_figma = []
-    extra_in_figma_norm = set(figma_mt_names_norm)  # start with all, remove matched
-    naming_discrepancies = []
-    assignment_discrepancies = []
-    matched_pairs = []
-
-    for ct in csv_tokens:
-        csv_figma_name = csv_name_to_figma_name(ct["full_token"])
-        csv_norm = normalize_name(csv_figma_name)
-
-        # Try exact match first
-        figma_var = figma_by_exact_name.get(csv_figma_name)
-        matched_norm = None
-
-        if figma_var:
-            matched_norm = normalize_name(csv_figma_name)
+    # --- SIZE ---
+    if name.startswith("semantic/size/"):
+        rules.append(("semantic/size/* → [FONT_SIZE]",
+                      ["FONT_SIZE"], "equal", None))
+    if name.startswith("breakpoint/"):
+        rules.append(("breakpoint/* → [WIDTH_HEIGHT], hidden=false",
+                      ["WIDTH_HEIGHT"], "equal", False))
+    if name.startswith("size/") and len(name.split("/")) >= 3:
+        if "/border" in name:
+            rules.append(("size/{component}/…/border… → [STROKE_FLOAT], hidden=true",
+                          ["STROKE_FLOAT"], "equal", True))
+        elif "/outline/" in name or name.endswith("/outline"):
+            rules.append(("size/{component}/…/outline/… → [STROKE_FLOAT], hidden=true",
+                          ["STROKE_FLOAT"], "equal", True))
         else:
-            # Try normalized match
-            figma_var = figma_by_norm_name.get(csv_norm)
-            if figma_var:
-                matched_norm = normalize_name(figma_var["name"])
-                # Report naming discrepancy if exact names differ
-                if csv_figma_name != figma_var["name"]:
-                    naming_discrepancies.append({
-                        "csv_token": ct["full_token"],
-                        "csv_figma_name": csv_figma_name,
-                        "figma_name": figma_var["name"],
-                        "issue": f"Name mismatch: CSV expects '{csv_figma_name}', Figma has '{figma_var['name']}'"
-                    })
+            rules.append(("size/{component}/… (dimension) → [WIDTH_HEIGHT], hidden=true",
+                          ["WIDTH_HEIGHT"], "equal", True))
 
-        if figma_var:
-            matched_pairs.append((ct, figma_var))
-            # Remove from extra set
-            if matched_norm in extra_in_figma_norm:
-                extra_in_figma_norm.discard(matched_norm)
+    # --- RADIUS ---
+    if name.startswith("radius/"):
+        rules.append(("radius/* → [CORNER_RADIUS]",
+                      ["CORNER_RADIUS"], "equal", None))
 
-            # Check assignment discrepancies for color tokens (light/dark modes)
-            if ct["light_mode"] or ct["dark_mode"]:
-                figma_all, figma_light, figma_dark = get_figma_mode_values(figma_var)
+    # --- TYPOGRAPHY ---
+    if "lineHeight" in name:
+        rules.append(("name contains lineHeight → [LINE_HEIGHT]",
+                      ["LINE_HEIGHT"], "equal", None))
+    if "letterSpacing" in name:
+        rules.append(("name contains letterSpacing → [LETTER_SPACING]",
+                      ["LETTER_SPACING"], "equal", None))
+    if "fontFamily" in name:
+        rules.append(("name contains fontFamily → [FONT_FAMILY]",
+                      ["FONT_FAMILY"], "equal", None))
+    if "weight" in name:
+        rules.append(("name contains weight → [FONT_STYLE]",
+                      ["FONT_STYLE"], "equal", None))
 
-                if ct["light_mode"] and not compare_value(ct["light_mode"], figma_light):
-                    assignment_discrepancies.append({
-                        "csv_token": ct["full_token"],
-                        "mode": "Light",
-                        "csv_value": ct["light_mode"],
-                        "figma_value": figma_light,
-                    })
-                if ct["dark_mode"] and not compare_value(ct["dark_mode"], figma_dark):
-                    assignment_discrepancies.append({
-                        "csv_token": ct["full_token"],
-                        "mode": "Dark",
-                        "csv_value": ct["dark_mode"],
-                        "figma_value": figma_dark,
-                    })
+    return rules
 
-            # Check All Modes value
-            if ct["all_modes"]:
-                figma_all, figma_light, figma_dark = get_figma_mode_values(figma_var)
-                if not compare_value(ct["all_modes"], figma_all):
-                    assignment_discrepancies.append({
-                        "csv_token": ct["full_token"],
-                        "mode": "All Modes",
-                        "csv_value": ct["all_modes"],
-                        "figma_value": figma_all,
-                    })
+
+def check_scoping(var):
+    actual_scopes = sorted(var.get("scopes", []))
+    actual_hidden = var.get("hiddenFromPublishing", False)
+    violations = []
+    for rule_desc, expected, mode, expected_hidden in evaluate_scoping(var):
+        expected_sorted = sorted(expected) if expected else []
+        if mode == "include":
+            scope_ok = all(s in actual_scopes for s in expected_sorted)
         else:
-            missing_in_figma.append(ct)
-
-    # Extra in Figma: merchant_tile vars that were not matched
-    extra_in_figma = []
-    for var in figma_mt_vars:
-        if normalize_name(var["name"]) in extra_in_figma_norm:
-            extra_in_figma.append(var)
-
-    return missing_in_figma, extra_in_figma, naming_discrepancies, assignment_discrepancies, matched_pairs
-
-
-# --- Step 4: Task 2 - Scoping rules evaluation ---
-
-def get_expected_scopes_and_publishing(csv_token, figma_var):
-    """
-    Determine expected scopes and hiddenFromPublishing for a token based on scoping rules.
-    Returns (expected_scopes, scope_mode, expected_hidden, rule_name) or (None, None, None, None) if no rule applies.
-    scope_mode is either 'equal' or 'include'.
-    """
-    full_token = csv_token["full_token"]
-    figma_name = figma_var["name"]
-    collection = figma_var.get("collection", "")
-
-    # Determine token type from the first segment after 'affirm.'
-    token_parts = full_token.split(".")
-    # token_parts[0] = 'affirm', [1] = type (color, spacing, radius, size, position)
-    token_type = token_parts[1] if len(token_parts) > 1 else ""
-
-    if token_type == "color":
-        if "/text/" in figma_name:
-            return ["TEXT_FILL"], "equal", True, "color /text/ -> scopes must equal [TEXT_FILL]"
-        elif "/icon/" in figma_name:
-            return ["SHAPE_FILL"], "include", True, "color /icon/ -> scopes must include [SHAPE_FILL]"
-        elif "/bg/" in figma_name:
-            return ["FRAME_FILL", "SHAPE_FILL"], "equal", True, "color /bg/ -> scopes must equal [FRAME_FILL, SHAPE_FILL]"
-        elif "/border/" in figma_name:
-            return ["STROKE_COLOR"], "equal", True, "color /border/ -> scopes must equal [STROKE_COLOR]"
-        elif "/outline/" in figma_name:
-            return ["STROKE_COLOR"], "equal", True, "color /outline/ -> scopes must equal [STROKE_COLOR]"
-
-    elif token_type == "spacing" or collection == "spacing" or figma_name.startswith("spacing/"):
-        return ["GAP"], "equal", True, "spacing -> scopes must equal [GAP]"
-
-    elif token_type == "radius" or figma_name.startswith("radius/"):
-        return ["CORNER_RADIUS"], "equal", None, "radius -> scopes must equal [CORNER_RADIUS]"
-
-    elif token_type == "size":
-        if "/border/" in figma_name or "/outline/" in figma_name:
-            return ["STROKE_FLOAT"], "equal", True, "size /border/ or /outline/ -> scopes must equal [STROKE_FLOAT]"
-        else:
-            return ["WIDTH_HEIGHT"], "equal", True, "size dimension -> scopes must equal [WIDTH_HEIGHT]"
-
-    elif token_type == "position":
-        return None, None, None, "position - no specific scoping rule"
-
-    return None, None, None, None
-
-
-def task2_scoping(matched_pairs):
-    """
-    Perform Task 2: Scoping rules evaluation on matched tokens.
-    Returns a list of scoping issues.
-    """
-    issues = []
-
-    for csv_token, figma_var in matched_pairs:
-        expected_scopes, scope_mode, expected_hidden, rule_name = get_expected_scopes_and_publishing(csv_token, figma_var)
-
-        if rule_name and "no specific scoping rule" in rule_name:
-            continue
-
-        if expected_scopes is None and expected_hidden is None and rule_name is None:
-            continue
-
-        actual_scopes = sorted(figma_var.get("scopes", []))
-        expected_scopes_sorted = sorted(expected_scopes) if expected_scopes else []
-        actual_hidden = figma_var.get("hiddenFromPublishing", False)
-
-        # Check scopes based on mode
-        if scope_mode == "include":
-            scope_ok = all(s in actual_scopes for s in expected_scopes_sorted)
-        else:  # "equal"
-            scope_ok = actual_scopes == expected_scopes_sorted
-
-        hidden_ok = True
-        if expected_hidden is not None:
-            hidden_ok = actual_hidden == expected_hidden
-
+            scope_ok = actual_scopes == expected_sorted
+        hidden_ok = True if expected_hidden is None else (actual_hidden == expected_hidden)
         if not scope_ok or not hidden_ok:
-            issue = {
-                "csv_token": csv_token["full_token"],
-                "figma_name": figma_var["name"],
-                "rule": rule_name,
-                "scope_mode": scope_mode,
-                "expected_scopes": expected_scopes_sorted,
+            violations.append({
+                "rule": rule_desc,
+                "expected_scopes": expected_sorted,
+                "expected_scope_mode": mode,
                 "actual_scopes": actual_scopes,
                 "scope_ok": scope_ok,
                 "expected_hidden": expected_hidden,
                 "actual_hidden": actual_hidden,
                 "hidden_ok": hidden_ok,
-            }
-            issues.append(issue)
-
-    return issues
+            })
+    return violations
 
 
-# --- Step 5: Generate outputs ---
+def main():
+    os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
-def generate_mapping_csv(csv_tokens, figma_vars, output_path):
-    """Generate the token mapping CSV with strict columns: csv_token, figma_name, figma_id."""
-    figma_by_exact_name = {}
-    figma_by_norm_name = {}
-    for var in figma_vars:
-        figma_by_exact_name[var["name"]] = var
-        figma_by_norm_name[normalize_name(var["name"])] = var
+    component_name = load_component_name() or "component"
+    safe_comp = safe_segment(component_name)
+    ts = datetime.now().strftime("%Y-%m-%d-%H-%M")
+    md_path = os.path.join(OUTPUTS_DIR, f"{ts}-{safe_comp}-figma-token-review.md")
+    dated_csv_path = os.path.join(OUTPUTS_DIR, f"{ts}-{safe_comp}-figma-token-mapping.csv")
 
-    rows = []
+    csv_tokens = read_csv_tokens(CSV_PATH)
+    figma_vars = read_figma_variables(JSON_PATH)
+
+    # In-scope component segments are derived from the CSV itself — this supports
+    # reviews that include subcomponents (e.g. dropdown + listbox).
+    in_scope_components = sorted({
+        component_segment(csv_token_to_figma_name(ct["full_token"]))
+        for ct in csv_tokens
+        if component_segment(csv_token_to_figma_name(ct["full_token"]))
+    })
+
+    figma_by_name = {v["name"]: v for v in figma_vars}
+    figma_by_norm = {v["name"].lower().replace(" ", "_"): v for v in figma_vars}
+
+    missing_in_figma = []
+    excluded_missing = []
+    naming_discrepancies = []
+    assignment_discrepancies = []
+    matched_pairs = []
+    matched_ids = set()
+
     for ct in csv_tokens:
-        csv_figma_name = csv_name_to_figma_name(ct["full_token"])
-        figma_var = figma_by_exact_name.get(csv_figma_name)
-        if not figma_var:
-            figma_var = figma_by_norm_name.get(normalize_name(csv_figma_name))
+        csv_fname = csv_token_to_figma_name(ct["full_token"])
+        var = figma_by_name.get(csv_fname)
+        if not var:
+            var = figma_by_norm.get(csv_fname.lower().replace(" ", "_"))
+            if var and var["name"] != csv_fname:
+                naming_discrepancies.append({
+                    "csv_token": ct["full_token"],
+                    "csv_figma_name": csv_fname,
+                    "figma_name": var["name"],
+                    "issue": "Differs only by case/spacing",
+                })
+        if not var:
+            if ct["foundation"] in STYLE_FOUNDATIONS:
+                excluded_missing.append(ct)
+            else:
+                missing_in_figma.append(ct)
+            continue
 
-        if figma_var:
-            rows.append({
-                "csv_token": ct["full_token"],
-                "figma_name": figma_var["name"],
-                "figma_id": figma_var.get("id", ""),
+        matched_pairs.append((ct, var))
+        matched_ids.add(var.get("id"))
+
+        all_modes, light, dark = figma_mode_values(var)
+        if ct["light_mode"] and normalize_csv_value(ct["light_mode"]) != light:
+            assignment_discrepancies.append({
+                "csv_token": ct["full_token"], "mode": "Light",
+                "csv_value": ct["light_mode"], "figma_value": light or "(none)",
             })
-        else:
-            rows.append({
-                "csv_token": ct["full_token"],
-                "figma_name": "",
-                "figma_id": "",
+        if ct["dark_mode"] and normalize_csv_value(ct["dark_mode"]) != dark:
+            assignment_discrepancies.append({
+                "csv_token": ct["full_token"], "mode": "Dark",
+                "csv_value": ct["dark_mode"], "figma_value": dark or "(none)",
+            })
+        if ct["all_modes"] and normalize_csv_value(ct["all_modes"]) != all_modes:
+            assignment_discrepancies.append({
+                "csv_token": ct["full_token"], "mode": "All Modes",
+                "csv_value": ct["all_modes"], "figma_value": all_modes or "(none)",
             })
 
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["csv_token", "figma_name", "figma_id"])
-        writer.writeheader()
-        writer.writerows(rows)
+    extra_in_figma = [
+        v for v in figma_vars
+        if component_segment(v["name"]) in in_scope_components
+        and v.get("id") not in matched_ids
+    ]
 
-    return rows
+    scoping_violations = []
+    for ct, var in matched_pairs:
+        for viol in check_scoping(var):
+            scoping_violations.append({
+                "csv_token": ct["full_token"],
+                "figma_name": var["name"],
+                "scopes": var.get("scopes", []),
+                "hidden": var.get("hiddenFromPublishing", False),
+                **viol,
+            })
 
+    # --- Write mapping CSV (dated + inputs) ---
+    mapping_rows = []
+    for ct in csv_tokens:
+        csv_fname = csv_token_to_figma_name(ct["full_token"])
+        var = figma_by_name.get(csv_fname) or figma_by_norm.get(csv_fname.lower().replace(" ", "_"))
+        mapping_rows.append({
+            "csv_token": ct["full_token"],
+            "figma_name": var["name"] if var else "",
+            "figma_id": var["id"] if var else "",
+        })
+    for path in (dated_csv_path, MAPPED_CSV_PATH):
+        with open(path, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=["csv_token", "figma_name", "figma_id"])
+            w.writeheader()
+            w.writerows(mapping_rows)
 
-def generate_md_report(
-    csv_tokens, figma_vars,
-    missing_in_figma, extra_in_figma,
-    naming_discrepancies, assignment_discrepancies,
-    matched_pairs, scoping_issues,
-    output_path
-):
-    """Generate the Markdown review report."""
-    total_csv = len(csv_tokens)
-    total_figma_mt = len([v for v in figma_vars if COMPONENT_NAME in v["name"]])
-    total_matched = len(matched_pairs)
-    total_missing = len(missing_in_figma)
-    total_extra = len(extra_in_figma)
-    total_naming = len(naming_discrepancies)
-    total_assignment = len(assignment_discrepancies)
-    total_scoping = len(scoping_issues)
-
+    # --- Write Markdown report ---
+    figma_in_scope = [v for v in figma_vars if component_segment(v["name"]) in in_scope_components]
     lines = []
-    lines.append(f"# Figma Token Review: merchant_tile")
-    lines.append(f"**Date:** {TODAY}")
+    lines.append(f"# Figma Variables Review — {component_name}")
+    lines.append("")
+    lines.append(f"**Date:** {ts}")
+    lines.append("")
+    lines.append("## Inputs used")
+    lines.append("")
+    lines.append(f"- componentName: `{component_name}` (filename segment: `{safe_comp}`)")
+    lines.append("- Additional rules (`tools/3-figma-variables-review/knowledge/additional-rules.md`): **present and applied**.")
+    lines.append("  - Shadow/gradient composite tokens excluded from the missing-in-Figma check (Figma styles, not variables).")
+    lines.append(f"  - Component-segment scoping applied: only Figma variables whose component segment is in `{in_scope_components}` were considered for Extra-in-Figma and Task 2. The in-scope set was derived from the component segments present in the CSV.")
+    lines.append(f"- CSV tokens read: {len(csv_tokens)}")
+    lines.append(f"- Figma variables read: {len(figma_vars)}")
+    lines.append(f"- Figma variables with in-scope component segment: {len(figma_in_scope)}")
     lines.append("")
     lines.append("## Summary")
     lines.append("")
-    lines.append(f"| Metric | Count |")
-    lines.append(f"|---|---|")
-    lines.append(f"| CSV Tokens | {total_csv} |")
-    lines.append(f"| Figma merchant_tile Variables | {total_figma_mt} |")
-    lines.append(f"| Matched Tokens | {total_matched} |")
-    lines.append(f"| Missing in Figma | {total_missing} |")
-    lines.append(f"| Extra in Figma (not in CSV) | {total_extra} |")
-    lines.append(f"| Naming Discrepancies | {total_naming} |")
-    lines.append(f"| Assignment Discrepancies | {total_assignment} |")
-    lines.append(f"| Scoping Issues | {total_scoping} |")
+    lines.append("| Metric | Count |")
+    lines.append("|---|---|")
+    lines.append(f"| CSV tokens | {len(csv_tokens)} |")
+    lines.append(f"| Matched | {len(matched_pairs)} |")
+    lines.append(f"| Missing in Figma | {len(missing_in_figma)} |")
+    lines.append(f"| Shadow/gradient excluded from missing check | {len(excluded_missing)} |")
+    lines.append(f"| Extra in Figma (component-scoped) | {len(extra_in_figma)} |")
+    lines.append(f"| Naming discrepancies | {len(naming_discrepancies)} |")
+    lines.append(f"| Assignment discrepancies | {len(assignment_discrepancies)} |")
+    lines.append(f"| Scoping violations | {len(scoping_violations)} |")
     lines.append("")
-
-    # --- Task 1 ---
     lines.append("---")
     lines.append("")
-    lines.append("## Task 1: CSV vs Figma Comparison")
+    lines.append("## Task 1: CSV vs Figma")
     lines.append("")
 
-    # Missing in Figma
     lines.append("### Missing in Figma")
     lines.append("")
     if missing_in_figma:
-        lines.append("The following CSV tokens have no matching Figma variable:")
-        lines.append("")
         lines.append("| CSV Token | Expected Figma Name |")
         lines.append("|---|---|")
         for ct in missing_in_figma:
-            lines.append(f"| `{ct['full_token']}` | `{csv_name_to_figma_name(ct['full_token'])}` |")
+            lines.append(f"| `{ct['full_token']}` | `{csv_token_to_figma_name(ct['full_token'])}` |")
     else:
-        lines.append("No missing tokens. All CSV tokens have matching Figma variables.")
+        lines.append("None.")
     lines.append("")
+    if excluded_missing:
+        lines.append("_Excluded per additional-rules.md (shadow/gradient are Figma styles, not variables):_")
+        for ct in excluded_missing:
+            lines.append(f"- `{ct['full_token']}`")
+        lines.append("")
 
-    # Extra in Figma
-    lines.append("### Extra in Figma (not in CSV)")
+    lines.append("### Extra in Figma")
     lines.append("")
     if extra_in_figma:
-        lines.append("The following Figma variables for merchant_tile are not present in the CSV:")
+        lines.append("Figma variables with in-scope component segment that are not listed in the CSV:")
         lines.append("")
-        lines.append("| Figma Variable Name | Collection | ID |")
+        lines.append("| Figma Variable | Collection | ID |")
         lines.append("|---|---|---|")
-        for var in extra_in_figma:
-            lines.append(f"| `{var['name']}` | {var.get('collection', '')} | {var.get('id', '')} |")
+        for v in extra_in_figma:
+            lines.append(f"| `{v['name']}` | {v.get('collection','')} | {v.get('id','')} |")
+        lines.append("")
+        lines.append(f"_Per additional-rules.md, only Figma variables with component segment in `{in_scope_components}` were considered._")
     else:
-        lines.append("No extra tokens. All Figma merchant_tile variables are accounted for in the CSV.")
+        lines.append("None.")
     lines.append("")
 
-    # Naming Discrepancies
-    lines.append("### Naming Discrepancies")
+    lines.append("### Naming discrepancies")
     lines.append("")
     if naming_discrepancies:
-        lines.append("The following tokens have name differences between CSV and Figma (matched by normalized name):")
-        lines.append("")
         lines.append("| CSV Token | Expected Figma Name | Actual Figma Name | Issue |")
         lines.append("|---|---|---|---|")
         for nd in naming_discrepancies:
             lines.append(f"| `{nd['csv_token']}` | `{nd['csv_figma_name']}` | `{nd['figma_name']}` | {nd['issue']} |")
     else:
-        lines.append("No naming discrepancies found.")
+        lines.append("None.")
     lines.append("")
 
-    # Assignment Discrepancies
-    lines.append("### Assignment Discrepancies")
+    lines.append("### Assignment discrepancies")
     lines.append("")
     if assignment_discrepancies:
-        lines.append("The following tokens have value assignment mismatches between CSV and Figma:")
-        lines.append("")
         lines.append("| CSV Token | Mode | CSV Value | Figma Value |")
         lines.append("|---|---|---|---|")
         for ad in assignment_discrepancies:
             lines.append(f"| `{ad['csv_token']}` | {ad['mode']} | `{ad['csv_value']}` | `{ad['figma_value']}` |")
     else:
-        lines.append("No assignment discrepancies. All matched token values align between CSV and Figma.")
+        lines.append("None.")
     lines.append("")
 
-    # --- Task 2 ---
     lines.append("---")
     lines.append("")
-    lines.append("## Task 2: Scoping Rules Evaluation")
+    lines.append("## Task 2: Scoping rule violations")
     lines.append("")
-
-    if scoping_issues:
-        lines.append(f"**{total_scoping} issue(s) found** in scoping/publishing configuration:")
-        lines.append("")
-
-        for si in scoping_issues:
-            lines.append(f"#### `{si['figma_name']}`")
+    lines.append(f"_Evaluated {len(matched_pairs)} matched variables (tokens present in both CSV and Figma, component segment in `{in_scope_components}`)._")
+    lines.append("")
+    if scoping_violations:
+        for sv in scoping_violations:
+            lines.append(f"#### `{sv['figma_name']}`")
             lines.append("")
-            lines.append(f"- **CSV Token:** `{si['csv_token']}`")
-            lines.append(f"- **Rule:** {si['rule']}")
-            if not si["scope_ok"]:
-                lines.append(f"- **Scopes Issue:** Expected `{si['expected_scopes']}`, got `{si['actual_scopes']}`")
-            if not si["hidden_ok"]:
-                lines.append(f"- **hiddenFromPublishing Issue:** Expected `{si['expected_hidden']}`, got `{si['actual_hidden']}`")
+            lines.append(f"- CSV Token: `{sv['csv_token']}`")
+            lines.append(f"- Rule: {sv['rule']}")
+            if not sv["scope_ok"]:
+                mode_label = "include" if sv["expected_scope_mode"] == "include" else "equal"
+                lines.append(f"- Scopes: expected ({mode_label}) `{sv['expected_scopes']}`, actual `{sv['actual_scopes']}`")
+            if not sv["hidden_ok"]:
+                lines.append(f"- hiddenFromPublishing: expected `{sv['expected_hidden']}`, actual `{sv['actual_hidden']}`")
             lines.append("")
     else:
-        lines.append("All matched tokens pass their scoping rules. No issues found.")
-        lines.append("")
+        lines.append("None.")
+    lines.append("")
 
-    # --- Scoping rules reference ---
     lines.append("---")
     lines.append("")
-    lines.append("## Scoping Rules Reference")
+    lines.append("## Token mapping")
     lines.append("")
-    lines.append("| Token Pattern | Expected Scopes | hiddenFromPublishing |")
-    lines.append("|---|---|---|")
-    lines.append("| color with `/text/` | `[TEXT_FILL]` | `true` |")
-    lines.append("| color with `/icon/` | includes `[SHAPE_FILL]` | `true` |")
-    lines.append("| color with `/bg/` | `[FRAME_FILL, SHAPE_FILL]` | `true` |")
-    lines.append("| color with `/border/` | `[STROKE_COLOR]` | `true` |")
-    lines.append("| color with `/outline/` | `[STROKE_COLOR]` | `true` |")
-    lines.append("| spacing | `[GAP]` | `true` |")
-    lines.append("| radius | `[CORNER_RADIUS]` | not checked |")
-    lines.append("| size with `/border/` or `/outline/` | `[STROKE_FLOAT]` | `true` |")
-    lines.append("| size (dimensions) | `[WIDTH_HEIGHT]` | `true` |")
-    lines.append("| position | no specific rule | - |")
+    lines.append(f"- Dated: `outputs/1-review/{os.path.basename(dated_csv_path)}`")
+    lines.append("- Inputs (overwritten): `inputs/mapped-component-tokens.csv`")
     lines.append("")
 
-    # Token mapping reference
-    lines.append("---")
-    lines.append("")
-    lines.append("## Token Mapping")
-    lines.append("")
-    lines.append(f"The full CSV-to-Figma token mapping is in `results/figma-token-mapping-{TODAY}.csv`.")
-    lines.append("")
-
-    with open(output_path, "w") as f:
+    with open(md_path, "w") as f:
         f.write("\n".join(lines))
 
-
-# --- Main ---
-
-def main():
-    print("Reading inputs...")
-    csv_tokens = read_csv_tokens(CSV_PATH)
-    figma_vars = read_figma_variables(JSON_PATH)
-
-    print(f"  CSV tokens: {len(csv_tokens)}")
-    print(f"  Figma variables: {len(figma_vars)}")
-    print(f"  Figma merchant_tile variables: {len([v for v in figma_vars if COMPONENT_NAME in v['name']])}")
-
-    print("\nRunning Task 1: CSV vs Figma comparison...")
-    missing_in_figma, extra_in_figma, naming_discrepancies, assignment_discrepancies, matched_pairs = task1_comparison(csv_tokens, figma_vars)
-
-    print(f"  Matched: {len(matched_pairs)}")
-    print(f"  Missing in Figma: {len(missing_in_figma)}")
-    print(f"  Extra in Figma: {len(extra_in_figma)}")
-    print(f"  Naming discrepancies: {len(naming_discrepancies)}")
-    print(f"  Assignment discrepancies: {len(assignment_discrepancies)}")
-
-    print("\nRunning Task 2: Scoping rules evaluation...")
-    scoping_issues = task2_scoping(matched_pairs)
-    print(f"  Scoping issues: {len(scoping_issues)}")
-
-    print(f"\nGenerating outputs...")
-    generate_mapping_csv(csv_tokens, figma_vars, CSV_OUTPUT)
-    print(f"  Written: {CSV_OUTPUT}")
-
-    generate_md_report(
-        csv_tokens, figma_vars,
-        missing_in_figma, extra_in_figma,
-        naming_discrepancies, assignment_discrepancies,
-        matched_pairs, scoping_issues,
-        MD_OUTPUT,
-    )
-    print(f"  Written: {MD_OUTPUT}")
-
-    print("\nDone!")
+    print(f"Component: {component_name} (segment: {safe_comp})")
+    print(f"In-scope component segments: {in_scope_components}")
+    print(f"CSV tokens: {len(csv_tokens)}  Figma variables: {len(figma_vars)}  In-scope Figma: {len(figma_in_scope)}")
+    print(f"Matched: {len(matched_pairs)}  Missing: {len(missing_in_figma)}  Excluded(style): {len(excluded_missing)}  Extra: {len(extra_in_figma)}")
+    print(f"Naming: {len(naming_discrepancies)}  Assignment: {len(assignment_discrepancies)}  Scoping: {len(scoping_violations)}")
+    print(f"Report: {md_path}")
+    print(f"Mapping (dated): {dated_csv_path}")
+    print(f"Mapping (inputs): {MAPPED_CSV_PATH}")
 
 
 if __name__ == "__main__":

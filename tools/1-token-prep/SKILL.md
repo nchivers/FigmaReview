@@ -7,8 +7,7 @@ Read the input files from this workspace (paths relative to workspace root):
   - inputs/component-tokens.csv (source of truth for all tasks)
   - inputs/figma-variables.json
   - tools/knowledge/figma-base-variables.csv (base token name → variable ID lookup)
-
-**Before running any tasks**, sync `tools/knowledge/figma-base-variables.csv` against the live DS Base Library using Figma MCP (see "Sync base variable lookup" section below).
+  - tools/1-token-prep/knowledge/additional-rules.md (extra filtering and exclusion rules — apply before running any tasks)
 
 After completing all tasks, determine a suggested branch name for the `build-figma-variables` skill using these rules (applied to the plan summary counts):
 
@@ -75,35 +74,6 @@ CSV token values reference base tokens using dot notation (e.g. `base.color.red.
 If a value cannot be found in the lookup CSV (e.g. it is a raw primitive like `#FFFFFF` rather than an alias), note it as "no alias found" and include the raw value instead.
 
 Always include the resolved variable ID alongside every required value in UPDATE and ADD plans.
-
----
-
-## Sync base variable lookup
-
-Run this before any tasks. Use Figma MCP to fetch all local variables from the DS Base Library and update `tools/knowledge/figma-base-variables.csv` to match.
-
-**DS Base Library:**
-- File key: `Sj1A24j9ANkav6SG2pHbop`
-- URL: `https://www.figma.com/design/Sj1A24j9ANkav6SG2pHbop/%F0%9F%8E%A8--R--DS-Base-Library?node-id=4718-7648&t=8gY2lycibW7oZ1wz-11`
-
-Call `get_variable_defs(fileKey)` to retrieve all variables. The CSV has columns `name`, `value`, `id`. For each variable returned by Figma MCP:
-
-- **name**: the variable's path name using `/` delimiters (e.g. `base/color/red/500`)
-- **value**: the resolved primitive value or alias name
-- **id**: the Figma variable ID (e.g. `VariableID:4360:1126027`)
-
-Compare the full set of variables from Figma against every row in the CSV and apply these changes directly to `tools/knowledge/figma-base-variables.csv`:
-
-| Condition | Action |
-|---|---|
-| Variable exists in Figma but not in CSV | **Add** a new row |
-| Variable exists in CSV but not in Figma | **Delete** the row |
-| Variable exists in both but `id` or `value` differs | **Update** the row |
-| Variable exists in both and all columns match | No change |
-
-**Fully overwrite** `tools/knowledge/figma-base-variables.csv` with the updated content. Use the updated CSV for all base token lookups in the tasks below.
-
-If the Figma MCP server is not available, skip this sync step, use the existing CSV as-is, and note in the output that the base variable lookup was not validated against the live library.
 
 ---
 
@@ -235,4 +205,4 @@ Use the structure below. If a section has no items, write "None." so reviewers c
 
 ---
 
-Do not modify any file in `inputs/` (e.g. `inputs.json`, `component-tokens.csv`, `figma-variables.json`). Write only the two plan files and, if the Figma MCP sync ran, the updated `tools/knowledge/figma-base-variables.csv`.
+Do not modify any file in `inputs/` (e.g. `inputs.json`, `component-tokens.csv`, `figma-variables.json`) or `tools/knowledge/`. Write only the two plan files.

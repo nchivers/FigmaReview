@@ -15,6 +15,7 @@
       "Bash(xcodes:*)",
       "Bash(pnpm:*)",
       "Bash(asdf:*)",
+      "Bash(git:*)",
       "Bash(gh:*)",
       "Read(**)",
       "Write(**)",

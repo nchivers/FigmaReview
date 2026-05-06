@@ -68,7 +68,7 @@ Work through your plan one task at a time. For each task:
 - All commands from the setup guide should be run with the working directory set to `../ux` (the cloned repo).
 - For steps that require manual user action (e.g. Android Studio GUI setup, iOS code signing, Slack channel requests, browser flows), explain what needs to be done and wait for the user to confirm before continuing.
 - If `asdf install` is needed, warn the user it may take several minutes as it compiles language runtimes.
-- **Stop before building.** Do not run build or run commands (`pnpm --filter mobile ios`, `pnpm --filter mobile android`, `pnpm --filter mobile dev`, `prebuild:clean`, etc.). The setup ends once all tools, dependencies, and configuration are in place.
+- **Stop before building.** Do not run build or run commands (`pnpm --filter storybook ios`, `pnpm --filter storybook android`, `pnpm --filter storybook dev`, `prebuild:clean`, etc.). The setup ends once all tools, dependencies, and configuration are in place.
 
 ---
 
@@ -78,10 +78,10 @@ Once all setup tasks from the guide are confirmed:
 - Let the user know the environment setup is complete and everything is in place to build.
 - List the commands they can use when they're ready:
   - `pnpm install` — install monorepo dependencies
-  - `pnpm --filter mobile prebuild:clean` — generate native project files
-  - `pnpm --filter mobile ios` — build and run on iOS
-  - `pnpm --filter mobile android` — build and run on Android
-  - `pnpm --filter mobile dev` — start the Metro dev server (faster after first build)
+  - `pnpm --filter storybook prebuild:clean` — generate native project files
+  - `pnpm --filter storybook ios` — build and run on iOS
+  - `pnpm --filter storybook android` — build and run on Android
+  - `pnpm --filter storybook dev` — start the Metro dev server (faster after first build)
 - Open the UX repo in a new Cursor window by running:
   ```
   cursor ../ux

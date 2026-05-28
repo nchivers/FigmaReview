@@ -93,18 +93,14 @@ A set of AI-powered tools for running quality checks on design system work befor
 
    5.3 Follow the prompts Claude provides to install and configure all required connections and tools.
 
----
+6. **Install Figma Plugin**
 
-## Install the Figma Plugin
+   6.1 Open **Figma Desktop**.
+   6.2 Go to **Plugins → Development → Import plugin from manifest…**
+   6.3 Navigate into the `plugin` folder inside DSToolbox.
+   6.4 Select `manifest.json`.
 
-The Figma plugin exports all variables from a library branch — required for a number of tools.
-
-1. Open **Figma Desktop**.
-2. Go to **Plugins → Development → Import plugin from manifest…**
-3. Navigate into the `plugin` folder inside DSToolbox.
-4. Select `manifest.json`.
-
-You should now see the **Export Variables to JSON** plugin under **Plugins > Development**.
+   You should now see the **Export Variables to JSON** plugin under **Plugins > Development**.
 
 ---
 
@@ -116,7 +112,8 @@ You should now see the **Export Variables to JSON** plugin under **Plugins > Dev
 
 ### Steps
 
-1. Copy all of your tokens (including column headers) into a new Google Sheet.
+1. Copy all of your tokens into a new Google Sheet.
+   > [Here is a template for you to use that already has the headers in it.](https://docs.google.com/spreadsheets/d/1QnpCxmFz7BCtsF37fG0syW7ba5pu0bD8AQCa_Rtm9LU/edit?usp=sharing)
    > **Tip:** Use `cmd + shift + v` to paste values only, without data validations or formatting.
 
 2. Download the sheet as a CSV: **File > Download > Comma Separated Values (.csv)**
@@ -166,7 +163,9 @@ Once happy with the result, submit your spreadsheet for review.
 
 **If your tokens have changed since your last CSV download:**
 
-1. Copy all tokens (including headers) into a new Google Sheet.
+1. Copy all tokens into a new Google Sheet.
+   > [Here is a template for you to use that already has the headers in it.](https://docs.google.com/spreadsheets/d/1QnpCxmFz7BCtsF37fG0syW7ba5pu0bD8AQCa_Rtm9LU/edit?usp=sharing)
+   > **Tip:** Use `cmd + shift + v` to paste values only, without data validations or formatting.
 2. Download as CSV: **File > Download > Comma Separated Values (.csv)**
 3. Open the CSV in Cursor, copy its contents, and paste into `inputs/component-tokens.csv`.
 4. Save (`cmd + s`).
@@ -259,7 +258,9 @@ Once happy, move on to Figma Variables Review to verify the result.
 
 **If your tokens have changed since your last CSV download:**
 
-1. Copy all tokens (including headers) into a new Google Sheet.
+1. Copy all tokens into a new Google Sheet.
+   > [Here is a template for you to use that already has the headers in it.](https://docs.google.com/spreadsheets/d/1QnpCxmFz7BCtsF37fG0syW7ba5pu0bD8AQCa_Rtm9LU/edit?usp=sharing)
+   > **Tip:** Use `cmd + shift + v` to paste values only, without data validations or formatting.
 2. Download as CSV: **File > Download > Comma Separated Values (.csv)**
 3. Open the CSV in Cursor, copy its contents, and paste into `inputs/component-tokens.csv`.
 4. Save (`cmd + s`).
@@ -360,7 +361,9 @@ Once happy with the result, submit your branch for review.
 
 **If your tokens have changed since your last CSV download:**
 
-1. Copy all tokens (including headers) into a new Google Sheet.
+1. Copy all tokens into a new Google Sheet.
+   > [Here is a template for you to use that already has the headers in it.](https://docs.google.com/spreadsheets/d/1QnpCxmFz7BCtsF37fG0syW7ba5pu0bD8AQCa_Rtm9LU/edit?usp=sharing)
+   > **Tip:** Use `cmd + shift + v` to paste values only, without data validations or formatting.
 2. Download as CSV: **File > Download > Comma Separated Values (.csv)**
 3. Open the CSV in Cursor, copy its contents, and paste into `inputs/component-tokens.csv`.
 4. Save (`cmd + s`).
